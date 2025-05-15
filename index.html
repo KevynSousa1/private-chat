@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Private Messaging App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #chat-container {
+            max-width: 600px;
+            margin: 20px auto;
+        }
+        #messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 5px;
+        }
+        .message.sent {
+            background-color: #d1e7dd;
+            margin-left: 20%;
+        }
+        .message.received {
+            background-color: #f8d7da;
+            margin-right: 20%;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="chat-container" class="p-4 bg-white rounded shadow">
+        <h1 class="text-2xl font-bold mb-4 text-center">Private Messaging App</h1>
+        <div id="setup" class="mb-4 hidden">
+            <div class="space-y-2">
+                <input type="text" id="join-chat-code" class="w-full p-2 border rounded" placeholder="Enter chat code to join">
+                <input type="text" id="join-user-code" class="w-full p-2 border rounded" placeholder="Enter user code of chat owner">
+                <button onclick="joinChat()" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Join Chat</button>
+            </div>
+        </div>
+        <div id="chat">
+            <p class="mb-2">Your User Code: <span id="user-code-display" class="font-mono"></span></p>
+            <p class="mb-2">Your Chat Code: <span id="chat-code-display" class="font-mono"></span></p>
+            <button onclick="showJoinForm()" class="mb-4 text-blue-500 hover:underline">Join another chat</button>
+            <div id="messages" class="mb-4"></div>
+            <div class="flex space-x-2">
+                <input type="text" id="message-input" class="flex-1 p-2 border rounded" placeholder="Type a message...">
+                <button onclick="sendMessage()" class="bg-green-500 text-white p-2 rounded hover:bg-green-600">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentChatId = null;
+        let userId = Math.random().toString(36).substring(2, 15); // Simple unique user ID
+        const messagesKey = 'chat_messages';
+
+        // Load stored messages
+        function loadMessages(chatId) {
+            const messages = JSON.parse(localStorage.getItem(messagesKey) || '{}')[chatId] || [];
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = '';
+            messages.forEach(msg => displayMessage(msg));
+        }
+
+        // Save message to localStorage
+        function saveMessage(chatId, message) {
+            const messages = JSON.parse(localStorage.getItem(messagesKey) || '{}');
+            if (!messages[chatId]) messages[chatId] = [];
+            messages[chatId].push(message);
+            localStorage.setItem(messagesKey, JSON.stringify(messages));
+        }
+
+        // Display message in chat
+        function displayMessage({ userId: senderId, message, timestamp }) {
+            const messagesDiv = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${senderId === userId ? 'sent' : 'received'}`;
+            msgDiv.innerHTML = `<strong>${senderId === userId ? 'You' : 'Other'}: </strong>${message} <small>(${new Date(timestamp).toLocaleTimeString()})</small>`;
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Show join form
+        function showJoinForm() {
+            document.getElementById('setup').classList.remove('hidden');
+            document.getElementById('join-chat-code').value = '';
+            document.getElementById('join-user-code').value = '';
+        }
+
+        // Join a chat with chat code and user code
+        function joinChat() {
+            const chatCode = document.getElementById('join-chat-code').value.trim();
+            const userCode = document.getElementById('join-user-code').value.trim();
+            if (chatCode && userCode) {
+                socket.emit('joinChat', { chatCode, userCode, userId });
+            } else {
+                alert('Please enter both a chat code and a user code.');
+            }
+        }
+
+        // Send a message
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            if (message && currentChatId) {
+                const msgData = { chatId: currentChatId, userId, message, timestamp: Date.now() };
+                socket.emit('sendMessage', msgData);
+                saveMessage(currentChatId, msgData);
+                displayMessage(msgData);
+                input.value = '';
+            }
+        }
+
+        // Handle Enter key for sending messages
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // Socket.IO event listeners
+        socket.on('connect', () => {
+            socket.emit('createChat', { userId }); // Create chat on connect
+        });
+
+        socket.on('chatCreated', ({ chatId, chatCode, userCode }) => {
+            currentChatId = chatId;
+            document.getElementById('user-code-display').textContent = userCode;
+            document.getElementById('chat-code-display').textContent = chatCode;
+            document.getElementById('setup').classList.add('hidden');
+            document.getElementById('chat').classList.remove('hidden');
+            loadMessages(chatId);
+        });
+
+        socket.on('chatJoined', ({ chatId }) => {
+            currentChatId = chatId;
+            document.getElementById('setup').classList.add('hidden');
+            document.getElementById('chat').classList.remove('hidden');
+            loadMessages(chatId);
+        });
+
+        socket.on('message', (msgData) => {
+            saveMessage(msgData.chatId, msgData);
+            if (msgData.chatId === currentChatId) {
+                displayMessage(msgData);
+            }
+        });
+
+        socket.on('error', (message) => {
+            alert(message);
+        });
+
+        socket.on('connect_error', () => {
+            alert('Failed to connect to the server. Please try refreshing the page.');
+        });
+    </script>
+</body>
+</html>
