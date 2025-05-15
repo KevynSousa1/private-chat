@@ -18,23 +18,28 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-const chats = {}; // { chatId: { chatCode, userCode, users, sockets } }
+const chats = {}; // { chatId: { chatCode, userCode, users: [{ userId, username }], sockets } }
 const chatCodeToChatId = {}; // { chatCode: chatId }
 const userCodeToChatId = {}; // { userCode: chatId }
 
 io.on('connection', (socket) => {
-    socket.on('createChat', ({ userId }) => {
+    socket.on('createChat', ({ userId, username }) => {
         const chatId = uuidv4();
         const chatCode = uuidv4().substring(0, 8); // Shortened UUID for chat
         const userCode = uuidv4().substring(0, 8); // Shortened UUID for user
-        chats[chatId] = { chatCode, userCode, users: [userId], sockets: [socket.id] };
+        chats[chatId] = { 
+            chatCode, 
+            userCode, 
+            users: [{ userId, username: username || 'Anonymous' }], 
+            sockets: [socket.id] 
+        };
         chatCodeToChatId[chatCode] = chatId;
         userCodeToChatId[userCode] = chatId;
         socket.join(chatId);
         socket.emit('chatCreated', { chatId, chatCode, userCode });
     });
 
-    socket.on('joinChat', ({ chatCode, userCode, userId }) => {
+    socket.on('joinChat', ({ chatCode, userCode, userId, username }) => {
         const chatId = chatCodeToChatId[chatCode];
         if (!chatId || !chats[chatId]) {
             socket.emit('error', 'Invalid or expired chat code.');
@@ -48,12 +53,25 @@ io.on('connection', (socket) => {
             socket.emit('error', 'Chat room is full.');
             return;
         }
-        if (!chats[chatId].users.includes(userId)) {
-            chats[chatId].users.push(userId);
+        if (!chats[chatId].users.some(u => u.userId === userId)) {
+            chats[chatId].users.push({ userId, username: username || 'Anonymous' });
             chats[chatId].sockets.push(socket.id);
         }
         socket.join(chatId);
-        socket.emit('chatJoined', { chatId });
+        // Notify others in the chat of the new user
+        io.to(chatId).emit('userOnline', { userId, username: username || 'Anonymous' });
+        // Send the list of users to the joining user
+        socket.emit('chatJoined', { chatId, users: chats[chatId].users });
+    });
+
+    socket.on('setUsername', ({ chatId, userId, username }) => {
+        if (chats[chatId]) {
+            const user = chats[chatId].users.find(u => u.userId === userId);
+            if (user) {
+                user.username = username;
+                io.to(chatId).emit('userOnline', { userId, username });
+            }
+        }
     });
 
     socket.on('sendMessage', (msgData) => {
@@ -63,11 +81,17 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         for (const chatId in chats) {
             const chat = chats[chatId];
-            chat.sockets = chat.sockets.filter(id => id !== socket.id);
-            if (chat.sockets.length === 0) {
-                delete chatCodeToChatId[chat.chatCode];
-                delete userCodeToChatId[chat.userCode];
-                delete chats[chatId];
+            const userIndex = chat.sockets.indexOf(socket.id);
+            if (userIndex !== -1) {
+                const user = chat.users[userIndex];
+                chat.sockets.splice(userIndex, 1);
+                chat.users.splice(userIndex, 1);
+                io.to(chatId).emit('userOffline', { userId: user.userId, username: user.username });
+                if (chat.sockets.length === 0) {
+                    delete chatCodeToChatId[chat.chatCode];
+                    delete userCodeToChatId[chat.userCode];
+                    delete chats[chatId];
+                }
             }
         }
     });
