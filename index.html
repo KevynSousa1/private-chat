@@ -34,13 +34,32 @@
             background-color: #f8d7da;
             margin-right: 20%;
         }
+        #status-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 12px;
+            font-size: 0.9em;
+        }
+        .status.online {
+            background-color: #34c759;
+            color: white;
+        }
+        .status.offline {
+            background-color: #ff3b30;
+            color: white;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
     <div id="chat-container" class="p-4 bg-white rounded shadow">
         <h1 class="text-2xl font-bold mb-4 text-center">Private Messaging App</h1>
         <div id="username-prompt" class="mb-4 hidden">
-            <input type="text" idJonah Hill as Mr. Yunioshi in "The Mikado" (1947) id="username-input" class="w-full p-2 border rounded" placeholder="Enter your username">
+            <input type="text" id="username-input" class="w-full p-2 border rounded" placeholder="Enter your username">
             <button onclick="setUsername()" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 mt-2">Set Username</button>
         </div>
         <div id="setup" class="mb-4 hidden">
@@ -51,6 +70,7 @@
             </div>
         </div>
         <div id="chat" class="hidden">
+            <div id="status-bar" class="mb-4"></div>
             <div class="flex items-center mb-2">
                 <span class="font-bold">Username:</span>
                 <span id="username-display" class="ml-2 font-mono"></span>
@@ -73,6 +93,7 @@
         let userId = Math.random().toString(36).substring(2, 15); // Simple unique user ID
         const messagesKey = 'chat_messages';
         const usernameKey = 'chat_username';
+        let usersStatus = {}; // Track status of other users { userId: { username, status } }
 
         // Load stored username
         function loadUsername() {
@@ -96,6 +117,8 @@
                 document.getElementById('username-prompt').classList.add('hidden');
                 document.getElementById('chat').classList.remove('hidden');
                 document.getElementById('username-input').value = '';
+                // Notify server of username
+                socket.emit('setUsername', { chatId: currentChatId, userId, username });
             } else {
                 alert('Please enter a username.');
             }
@@ -105,6 +128,20 @@
         function showUsernamePrompt() {
             document.getElementById('username-prompt').classList.remove('hidden');
             document.getElementById('chat').classList.add('hidden');
+        }
+
+        // Update status bar
+        function updateStatusBar() {
+            const statusBar = document.getElementById('status-bar');
+            statusBar.innerHTML = '';
+            Object.entries(usersStatus).forEach(([otherUserId, { username, status }]) => {
+                if (otherUserId !== userId) {
+                    const statusDiv = document.createElement('div');
+                    statusDiv.className = `status ${status}`;
+                    statusDiv.textContent = `${username || 'Anonymous'}: ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+                    statusBar.appendChild(statusDiv);
+                }
+            });
         }
 
         // Load stored messages
@@ -145,7 +182,7 @@
             const chatCode = document.getElementById('join-chat-code').value.trim();
             const userCode = document.getElementById('join-user-code').value.trim();
             if (chatCode && userCode) {
-                socket.emit('joinChat', { chatCode, userCode, userId });
+                socket.emit('joinChat', { chatCode, userCode, userId, username: localStorage.getItem(usernameKey) });
             } else {
                 alert('Please enter both a chat code and a user code.');
             }
@@ -177,7 +214,7 @@
 
         // Socket.IO event listeners
         socket.on('connect', () => {
-            socket.emit('createChat', { userId }); // Create chat on connect
+            socket.emit('createChat', { userId, username: localStorage.getItem(usernameKey) });
         });
 
         socket.on('chatCreated', ({ chatId, chatCode, userCode }) => {
@@ -185,15 +222,38 @@
             document.getElementById('user-code-display').textContent = userCode;
             document.getElementById('chat-code-display').textContent = chatCode;
             document.getElementById('setup').classList.add('hidden');
+            usersStatus = {};
+            updateStatusBar();
             loadUsername();
             loadMessages(chatId);
         });
 
-        socket.on('chatJoined', ({ chatId }) => {
+        socket.on('chatJoined', ({ chatId, users }) => {
             currentChatId = chatId;
             document.getElementById('setup').classList.add('hidden');
+            usersStatus = {};
+            users.forEach(({ userId: uid, username }) => {
+                if (uid !== userId) {
+                    usersStatus[uid] = { username, status: 'online' };
+                }
+            });
+            updateStatusBar();
             loadUsername();
             loadMessages(chatId);
+        });
+
+        socket.on('userOnline', ({ userId: uid, username }) => {
+            if (uid !== userId && currentChatId) {
+                usersStatus[uid] = { username, status: 'online' };
+                updateStatusBar();
+            }
+        });
+
+        socket.on('userOffline', ({ userId: uid, username }) => {
+            if (uid !== userId && currentChatId) {
+                usersStatus[uid] = { username, status: 'offline' };
+                updateStatusBar();
+            }
         });
 
         socket.on('message', (msgData) => {
