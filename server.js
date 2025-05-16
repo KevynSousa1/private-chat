@@ -58,9 +58,7 @@ io.on('connection', (socket) => {
             chats[chatId].sockets.push(socket.id);
         }
         socket.join(chatId);
-        // Notify others in the chat of the new user
         io.to(chatId).emit('userOnline', { userId, username: username || 'Anonymous' });
-        // Send the list of users to the joining user
         socket.emit('chatJoined', { chatId, users: chats[chatId].users });
     });
 
