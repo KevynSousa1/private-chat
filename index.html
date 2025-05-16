@@ -6,6 +6,7 @@
     <title>Private Messaging App</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://widget.cloudinary.com/v2.0/global/all.js" type="text/javascript"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -53,6 +54,15 @@
             background-color: #ff3b30;
             color: white;
         }
+        .message img {
+            max-width: 200px;
+            margin-top: 5px;
+            border-radius: 5px;
+        }
+        .message a {
+            color: #1d4ed8;
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -83,6 +93,7 @@
             <div class="flex space-x-2">
                 <input type="text" id="message-input" class="flex-1 p-2 border rounded" placeholder="Type a message...">
                 <button onclick="sendMessage()" class="bg-green-500 text-white p-2 rounded hover:bg-green-600">Send</button>
+                <button onclick="openFileUpload()" class="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">📎</button>
             </div>
         </div>
     </div>
@@ -94,6 +105,52 @@
         const messagesKey = 'chat_messages';
         const usernameKey = 'chat_username';
         let usersStatus = {}; // Track status of other users { userId: { username, status } }
+
+        // Cloudinary configuration
+        const cloudinaryWidget = cloudinary.createUploadWidget(
+            {
+                cloudName: 'YOUR_CLOUDINARY_CLOUD_NAME', // Replace with your Cloudinary Cloud Name
+                uploadPreset: 'unsigned_chat_upload', // Create an unsigned upload preset in Cloudinary
+                sources: ['local'],
+                multiple: false,
+                resourceType: 'auto',
+                maxFileSize: 10000000, // 10MB limit
+                clientAllowedFormats: ['png', 'jpeg', 'pdf', 'txt']
+            },
+            (error, result) => {
+                if (!error && result && result.event === 'success') {
+                    const fileUrl = result.info.secure_url;
+                    const fileType = result.info.resource_type === 'image' ? 'image' : 'file';
+                    sendFileMessage(fileUrl, fileType);
+                } else if (error) {
+                    alert('File upload failed: ' + error.message);
+                }
+            }
+        );
+
+        // Open Cloudinary upload widget
+        function openFileUpload() {
+            cloudinaryWidget.open();
+        }
+
+        // Send file message
+        function sendFileMessage(fileUrl, fileType) {
+            const username = localStorage.getItem(usernameKey);
+            if (currentChatId) {
+                const msgData = {
+                    chatId: currentChatId,
+                    userId,
+                    message: '',
+                    fileUrl,
+                    fileType,
+                    timestamp: Date.now(),
+                    username
+                };
+                socket.emit('sendMessage', msgData);
+                saveMessage(currentChatId, msgData);
+                displayMessage(msgData);
+            }
+        }
 
         // Load stored username
         function loadUsername() {
@@ -117,7 +174,6 @@
                 document.getElementById('username-prompt').classList.add('hidden');
                 document.getElementById('chat').classList.remove('hidden');
                 document.getElementById('username-input').value = '';
-                // Notify server of username
                 socket.emit('setUsername', { chatId: currentChatId, userId, username });
             } else {
                 alert('Please enter a username.');
@@ -161,11 +217,23 @@
         }
 
         // Display message in chat
-        function displayMessage({ userId: senderId, message, timestamp, username }) {
+        function displayMessage({ userId: senderId, message, fileUrl, fileType, timestamp, username }) {
             const messagesDiv = document.getElementById('messages');
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${senderId === userId ? 'sent' : 'received'}`;
-            msgDiv.innerHTML = `<strong>${username || 'Anonymous'}: </strong>${message} <small>(${new Date(timestamp).toLocaleTimeString()})</small>`;
+            let content = `<strong>${username || 'Anonymous'}: </strong>`;
+            if (message) {
+                content += message;
+            }
+            if (fileUrl) {
+                if (fileType === 'image') {
+                    content += `<br><img src="${fileUrl}" alt="Shared image">`;
+                } else {
+                    content += `<br><a href="${fileUrl}" target="_blank">View File</a>`;
+                }
+            }
+            content += ` <small>(${new Date(timestamp).toLocaleTimeString()})</small>`;
+            msgDiv.innerHTML = content;
             messagesDiv.appendChild(msgDiv);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
@@ -197,7 +265,7 @@
                 const msgData = { chatId: currentChatId, userId, message, timestamp: Date.now(), username };
                 socket.emit('sendMessage', msgData);
                 saveMessage(currentChatId, msgData);
-                displayMessage(msgData); // Display locally
+                displayMessage(msgData);
                 input.value = '';
             }
         }
@@ -257,7 +325,6 @@
         });
 
         socket.on('message', (msgData) => {
-            // Only save and display if not from the current user
             if (msgData.userId !== userId) {
                 saveMessage(msgData.chatId, msgData);
                 if (msgData.chatId === currentChatId) {
