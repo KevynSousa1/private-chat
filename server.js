@@ -18,7 +18,7 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-const chats = {}; // { chatId: { chatCode, userCode, users: [{ userId, username }], sockets } }
+const chats = {}; // { chatId: { chatCode, userCode, chatName, users: [{ userId, username }], sockets } }
 const chatCodeToChatId = {}; // { chatCode: chatId }
 const userCodeToChatId = {}; // { userCode: chatId }
 
@@ -27,16 +27,18 @@ io.on('connection', (socket) => {
         const chatId = uuidv4();
         const chatCode = uuidv4().substring(0, 8); // Shortened UUID for chat
         const userCode = uuidv4().substring(0, 8); // Shortened UUID for user
+        const chatName = 'Private Chat'; // Default name
         chats[chatId] = { 
             chatCode, 
             userCode, 
+            chatName,
             users: [{ userId, username: username || 'Anonymous' }], 
             sockets: [socket.id] 
         };
         chatCodeToChatId[chatCode] = chatId;
         userCodeToChatId[userCode] = chatId;
         socket.join(chatId);
-        socket.emit('chatCreated', { chatId, chatCode, userCode });
+        socket.emit('chatCreated', { chatId, chatCode, userCode, chatName });
     });
 
     socket.on('joinChat', ({ chatCode, userCode, userId, username }) => {
@@ -59,7 +61,7 @@ io.on('connection', (socket) => {
         }
         socket.join(chatId);
         io.to(chatId).emit('userOnline', { userId, username: username || 'Anonymous' });
-        socket.emit('chatJoined', { chatId, users: chats[chatId].users });
+        socket.emit('chatJoined', { chatId, users: chats[chatId].users, chatName: chats[chatId].chatName });
     });
 
     socket.on('setUsername', ({ chatId, userId, username }) => {
@@ -69,6 +71,13 @@ io.on('connection', (socket) => {
                 user.username = username;
                 io.to(chatId).emit('userOnline', { userId, username });
             }
+        }
+    });
+
+    socket.on('setChatName', ({ chatId, chatName }) => {
+        if (chats[chatId] && chatName.trim()) {
+            chats[chatId].chatName = chatName.substring(0, 50); // Enforce max length
+            io.to(chatId).emit('chatNameUpdated', { chatName: chats[chatId].chatName });
         }
     });
 
