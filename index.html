@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Private Messaging App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://widget.cloudinary.com/v2.0/global/all.js" type="text/javascript"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #chat-container {
+            max-width: 600px;
+            margin: 20px auto;
+        }
+        #messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 5px;
+        }
+        .message.sent {
+            background-color: #d1e7dd;
+            margin-left: 20%;
+        }
+        .message.received {
+            background-color: #f8d7da;
+            margin-right: 20%;
+        }
+        #status-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 12px;
+            font-size: 0.9em;
+        }
+        .status.online {
+            background-color: #34c759;
+            color: white;
+        }
+        .status.offline {
+            background-color: #ff3b30;
+            color: white;
+        }
+        .message img {
+            max-width: 200px;
+            margin-top: 5px;
+            border-radius: 5px;
+        }
+        .message a {
+            color: #1d4ed8;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="chat-container" class="p-4 bg-white rounded shadow">
+        <h1 id="chat-title" class="text-2xl font-bold mb-4 text-center">Private Chat</h1>
+        <div id="chat-name-prompt" class="mb-4 hidden">
+            <input type="text" id="chat-name-input" class="w-full p-2 border rounded" placeholder="Enter chat name (max 50 characters)" maxlength="50">
+            <button onclick="setChatName()" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 mt-2">Set Chat Name</button>
+        </div>
+        <div id="username-prompt" class="mb-4 hidden">
+            <input type="text" id="username-input" class="w-full p-2 border rounded" placeholder="Enter your username">
+            <button onclick="setUsername()" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 mt-2">Set Username</button>
+        </div>
+        <div id="setup" class="mb-4 hidden">
+            <div class="space-y-2">
+                <input type="text" id="join-chat-code" class="w-full p-2 border rounded" placeholder="Enter chat code to join">
+                <input type="text" id="join-user-code" class="w-full p-2 border rounded" placeholder="Enter user code of chat owner">
+                <button onclick="joinChat()" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Join Chat</button>
+            </div>
+        </div>
+        <div id="chat" class="hidden">
+            <div class="flex items-center mb-2">
+                <button onclick="showChatNamePrompt()" class="text-blue-500 hover:underline text-sm">Change Chat Name</button>
+            </div>
+            <div id="status-bar" class="mb-4"></div>
+            <div class="flex items-center mb-2">
+                <span class="font-bold">Username:</span>
+                <span id="username-display" class="ml-2 font-mono"></span>
+                <button onclick="showUsernamePrompt()" class="ml-2 text-blue-500 hover:underline text-sm">Change</button>
+            </div>
+            <p class="mb-2">Your User Code: <span id="user-code-display" class="font-mono"></span></p>
+            <p class="mb-2">Your Chat Code: <span id="chat-code-display" class="font-mono"></span></p>
+            <button onclick="showJoinForm()" class="mb-4 text-blue-500 hover:underline">Join another chat</button>
+            <div id="messages" class="mb-4"></div>
+            <div class="flex space-x-2">
+                <input type="text" id="message-input" class="flex-1 p-2 border rounded" placeholder="Type a message...">
+                <button onclick="sendMessage()" class="bg-green-500 text-white p-2 rounded hover:bg-green-600">Send</button>
+                <button onclick="openFileUpload()" class="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">📎</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentChatId = null;
+        let userId = Math.random().toString(36).substring(2, 15); // Simple unique user ID
+        const messagesKey = 'chat_messages';
+        const usernameKey = 'chat_username';
+        let usersStatus = {}; // Track status of other users { userId: { username, status } }
+
+        // Cloudinary configuration
+        const cloudinaryWidget = cloudinary.createUploadWidget(
+            {
+                cloudName: 'YOUR_CLOUDINARY_CLOUD_NAME', // Replace with your Cloudinary Cloud Name
+                uploadPreset: 'unsigned_chat_upload', // Create an unsigned upload preset in Cloudinary
+                sources: ['local'],
+                multiple: false,
+                resourceType: 'auto',
+                maxFileSize: 10000000, // 10MB limit
+                clientAllowedFormats: ['png', 'jpeg', 'pdf', 'txt']
+            },
+            (error, result) => {
+                if (!error && result && result.event === 'success') {
+                    const fileUrl = result.info.secure_url;
+                    const fileType = result.info.resource_type === 'image' ? 'image' : 'file';
+                    sendFileMessage(fileUrl, fileType);
+                } else if (error) {
+                    alert('File upload failed: ' + error.message);
+                }
+            }
+        );
+
+        // Open Cloudinary upload widget
+        function openFileUpload() {
+            cloudinaryWidget.open();
+        }
+
+        // Send file message
+        function sendFileMessage(fileUrl, fileType) {
+            const username = localStorage.getItem(usernameKey);
+            if (currentChatId) {
+                const msgData = {
+                    chatId: currentChatId,
+                    userId,
+                    message: '',
+                    fileUrl,
+                    fileType,
+                    timestamp: Date.now(),
+                    username
+                };
+                socket.emit('sendMessage', msgData);
+                saveMessage(currentChatId, msgData);
+                displayMessage(msgData);
+            }
+        }
+
+        // Load stored username
+        function loadUsername() {
+            const username = localStorage.getItem(usernameKey);
+            if (username) {
+                document.getElementById('username-display').textContent = username;
+                document.getElementById('username-prompt').classList.add('hidden');
+                document.getElementById('chat').classList.remove('hidden');
+            } else {
+                document.getElementById('username-prompt').classList.remove('hidden');
+                document.getElementById('chat').classList.add('hidden');
+            }
+        }
+
+        // Set and save username
+        function setUsername() {
+            const username = document.getElementById('username-input').value.trim();
+            if (username) {
+                localStorage.setItem(usernameKey, username);
+                document.getElementById('username-display').textContent = username;
+                document.getElementById('username-prompt').classList.add('hidden');
+                document.getElementById('chat').classList.remove('hidden');
+                document.getElementById('username-input').value = '';
+                socket.emit('setUsername', { chatId: currentChatId, userId, username });
+            } else {
+                alert('Please enter a username.');
+            }
+        }
+
+        // Show username prompt
+        function showUsernamePrompt() {
+            document.getElementById('username-prompt').classList.remove('hidden');
+            document.getElementById('chat').classList.add('hidden');
+        }
+
+        // Show chat name prompt
+        function showChatNamePrompt() {
+            document.getElementById('chat-name-prompt').classList.remove('hidden');
+            document.getElementById('chat').classList.add('hidden');
+            document.getElementById('chat-name-input').value = document.getElementById('chat-title').textContent;
+        }
+
+        // Set chat name
+        function setChatName() {
+            const chatName = document.getElementById('chat-name-input').value.trim();
+            if (chatName) {
+                socket.emit('setChatName', { chatId: currentChatId, chatName });
+                document.getElementById('chat-name-prompt').classList.add('hidden');
+                document.getElementById('chat').classList.remove('hidden');
+                document.getElementById('chat-name-input').value = '';
+            } else {
+                alert('Please enter a chat name.');
+            }
+        }
+
+        // Update status bar
+        function updateStatusBar() {
+            const statusBar = document.getElementById('status-bar');
+            statusBar.innerHTML = '';
+            Object.entries(usersStatus).forEach(([otherUserId, { username, status }]) => {
+                if (otherUserId !== userId) {
+                    const statusDiv = document.createElement('div');
+                    statusDiv.className = `status ${status}`;
+                    statusDiv.textContent = `${username || 'Anonymous'}: ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+                    statusBar.appendChild(statusDiv);
+                }
+            });
+        }
+
+        // Load stored messages
+        function loadMessages(chatId) {
+            const messages = JSON.parse(localStorage.getItem(messagesKey) || '{}')[chatId] || [];
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = '';
+            messages.forEach(msg => displayMessage(msg));
+        }
+
+        // Save message to localStorage
+        function saveMessage(chatId, message) {
+            const messages = JSON.parse(localStorage.getItem(messagesKey) || '{}');
+            if (!messages[chatId]) messages[chatId] = [];
+            messages[chatId].push(message);
+            localStorage.setItem(messagesKey, JSON.stringify(messages));
+        }
+
+        // Display message in chat
+        function displayMessage({ userId: senderId, message, fileUrl, fileType, timestamp, username }) {
+            const messagesDiv = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${senderId === userId ? 'sent' : 'received'}`;
+            let content = `<strong>${username || 'Anonymous'}: </strong>`;
+            if (message) {
+                content += message;
+            }
+            if (fileUrl) {
+                if (fileType === 'image') {
+                    content += `<br><img src="${fileUrl}" alt="Shared image">`;
+                } else {
+                    content += `<br><a href="${fileUrl}" target="_blank">View File</a>`;
+                }
+            }
+            content += ` <small>(${new Date(timestamp).toLocaleTimeString()})</small>`;
+            msgDiv.innerHTML = content;
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Show join form
+        function showJoinForm() {
+            document.getElementById('setup').classList.remove('hidden');
+            document.getElementById('join-chat-code').value = '';
+            document.getElementById('join-user-code').value = '';
+        }
+
+        // Join a chat with chat code and user code
+        function joinChat() {
+            const chatCode = document.getElementById('join-chat-code').value.trim();
+            const userCode = document.getElementById('join-user-code').value.trim();
+            if (chatCode && userCode) {
+                socket.emit('joinChat', { chatCode, userCode, userId, username: localStorage.getItem(usernameKey) });
+            } else {
+                alert('Please enter both a chat code and a user code.');
+            }
+        }
+
+        // Send a message
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            const username = localStorage.getItem(usernameKey);
+            if (message && currentChatId) {
+                const msgData = { chatId: currentChatId, userId, message, timestamp: Date.now(), username };
+                socket.emit('sendMessage', msgData);
+                saveMessage(currentChatId, msgData);
+                displayMessage(msgData);
+                input.value = '';
+            }
+        }
+
+        // Handle Enter key for sending messages
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // Handle Enter key for setting username
+        document.getElementById('username-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') setUsername();
+        });
+
+        // Handle Enter key for setting chat name
+        document.getElementById('chat-name-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') setChatName();
+        });
+
+        // Socket.IO event listeners
+        socket.on('connect', () => {
+            socket.emit('createChat', { userId, username: localStorage.getItem(usernameKey) });
+        });
+
+        socket.on('chatCreated', ({ chatId, chatCode, userCode, chatName }) => {
+            currentChatId = chatId;
+            document.getElementById('user-code-display').textContent = userCode;
+            document.getElementById('chat-code-display').textContent = chatCode;
+            document.getElementById('chat-title').textContent = chatName || 'Private Chat';
+            document.getElementById('setup').classList.add('hidden');
+            usersStatus = {};
+            updateStatusBar();
+            loadUsername();
+            loadMessages(chatId);
+        });
+
+        socket.on('chatJoined', ({ chatId, users, chatName }) => {
+            currentChatId = chatId;
+            document.getElementById('chat-title').textContent = chatName || 'Private Chat';
+            document.getElementById('setup').classList.add('hidden');
+            usersStatus = {};
+            users.forEach(({ userId: uid, username }) => {
+                if (uid !== userId) {
+                    usersStatus[uid] = { username, status: 'online' };
+                }
+            });
+            updateStatusBar();
+            loadUsername();
+            loadMessages(chatId);
+        });
+
+        socket.on('chatNameUpdated', ({ chatName }) => {
+            document.getElementById('chat-title').textContent = chatName || 'Private Chat';
+        });
+
+        socket.on('userOnline', ({ userId: uid, username }) => {
+            if (uid !== userId && currentChatId) {
+                usersStatus[uid] = { username, status: 'online' };
+                updateStatusBar();
+            }
+        });
+
+        socket.on('userOffline', ({ userId: uid, username }) => {
+            if (uid !== userId && currentChatId) {
+                usersStatus[uid] = { username, status: 'offline' };
+                updateStatusBar();
+            }
+        });
+
+        socket.on('message', (msgData) => {
+            if (msgData.userId !== userId) {
+                saveMessage(msgData.chatId, msgData);
+                if (msgData.chatId === currentChatId) {
+                    displayMessage(msgData);
+                }
+            }
+        });
+
+        socket.on('error', (message) => {
+            alert(message);
+        });
+
+        socket.on('connect_error', () => {
+            alert('Failed to connect to the server. Please try refreshing the page.');
+        });
+    </script>
+</body>
+    </html>
