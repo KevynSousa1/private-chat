@@ -67,7 +67,11 @@
 </head>
 <body class="bg-gray-100">
     <div id="chat-container" class="p-4 bg-white rounded shadow">
-        <h1 class="text-2xl font-bold mb-4 text-center">Private Messaging App</h1>
+        <h1 id="chat-title" class="text-2xl font-bold mb-4 text-center">Private Chat</h1>
+        <div id="chat-name-prompt" class="mb-4 hidden">
+            <input type="text" id="chat-name-input" class="w-full p-2 border rounded" placeholder="Enter chat name (max 50 characters)" maxlength="50">
+            <button onclick="setChatName()" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 mt-2">Set Chat Name</button>
+        </div>
         <div id="username-prompt" class="mb-4 hidden">
             <input type="text" id="username-input" class="w-full p-2 border rounded" placeholder="Enter your username">
             <button onclick="setUsername()" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 mt-2">Set Username</button>
@@ -80,6 +84,9 @@
             </div>
         </div>
         <div id="chat" class="hidden">
+            <div class="flex items-center mb-2">
+                <button onclick="showChatNamePrompt()" class="text-blue-500 hover:underline text-sm">Change Chat Name</button>
+            </div>
             <div id="status-bar" class="mb-4"></div>
             <div class="flex items-center mb-2">
                 <span class="font-bold">Username:</span>
@@ -109,7 +116,7 @@
         // Cloudinary configuration
         const cloudinaryWidget = cloudinary.createUploadWidget(
             {
-                cloudName: 'dcf41aptm', // Replace with your Cloudinary Cloud Name
+                cloudName: 'YOUR_CLOUDINARY_CLOUD_NAME', // Replace with your Cloudinary Cloud Name
                 uploadPreset: 'unsigned_chat_upload', // Create an unsigned upload preset in Cloudinary
                 sources: ['local'],
                 multiple: false,
@@ -184,6 +191,26 @@
         function showUsernamePrompt() {
             document.getElementById('username-prompt').classList.remove('hidden');
             document.getElementById('chat').classList.add('hidden');
+        }
+
+        // Show chat name prompt
+        function showChatNamePrompt() {
+            document.getElementById('chat-name-prompt').classList.remove('hidden');
+            document.getElementById('chat').classList.add('hidden');
+            document.getElementById('chat-name-input').value = document.getElementById('chat-title').textContent;
+        }
+
+        // Set chat name
+        function setChatName() {
+            const chatName = document.getElementById('chat-name-input').value.trim();
+            if (chatName) {
+                socket.emit('setChatName', { chatId: currentChatId, chatName });
+                document.getElementById('chat-name-prompt').classList.add('hidden');
+                document.getElementById('chat').classList.remove('hidden');
+                document.getElementById('chat-name-input').value = '';
+            } else {
+                alert('Please enter a chat name.');
+            }
         }
 
         // Update status bar
@@ -280,15 +307,21 @@
             if (e.key === 'Enter') setUsername();
         });
 
+        // Handle Enter key for setting chat name
+        document.getElementById('chat-name-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') setChatName();
+        });
+
         // Socket.IO event listeners
         socket.on('connect', () => {
             socket.emit('createChat', { userId, username: localStorage.getItem(usernameKey) });
         });
 
-        socket.on('chatCreated', ({ chatId, chatCode, userCode }) => {
+        socket.on('chatCreated', ({ chatId, chatCode, userCode, chatName }) => {
             currentChatId = chatId;
             document.getElementById('user-code-display').textContent = userCode;
             document.getElementById('chat-code-display').textContent = chatCode;
+            document.getElementById('chat-title').textContent = chatName || 'Private Chat';
             document.getElementById('setup').classList.add('hidden');
             usersStatus = {};
             updateStatusBar();
@@ -296,8 +329,9 @@
             loadMessages(chatId);
         });
 
-        socket.on('chatJoined', ({ chatId, users }) => {
+        socket.on('chatJoined', ({ chatId, users, chatName }) => {
             currentChatId = chatId;
+            document.getElementById('chat-title').textContent = chatName || 'Private Chat';
             document.getElementById('setup').classList.add('hidden');
             usersStatus = {};
             users.forEach(({ userId: uid, username }) => {
@@ -308,6 +342,10 @@
             updateStatusBar();
             loadUsername();
             loadMessages(chatId);
+        });
+
+        socket.on('chatNameUpdated', ({ chatName }) => {
+            document.getElementById('chat-title').textContent = chatName || 'Private Chat';
         });
 
         socket.on('userOnline', ({ userId: uid, username }) => {
@@ -342,4 +380,4 @@
         });
     </script>
 </body>
-</html>
+    </html>
