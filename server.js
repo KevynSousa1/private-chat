@@ -26,11 +26,11 @@ app.get('/service-worker.js', (req, res) => {
 
 // VAPID keys for push notifications
 const vapidKeys = {
-    publicKey: process.env.VAPID_PUBLIC_KEY || 'BNxMSF8g57fv25doxz5C2CzociUlIwc03IMrXsIqbU1RHS_16dpt2054smZ19aXdBNy7mC5jZcrYvBwn0D0XwHQ',
-    privateKey: process.env.VAPID_PRIVATE_KEY || 'zfbd7VmvKDphOcXo2Nsdcg9Cj2LsQ26w0p1dhxK1es0'
+    publicKey: process.env.VAPID_PUBLIC_KEY || 'YOUR_NEW_VAPID_PUBLIC_KEY',
+    privateKey: process.env.VAPID_PRIVATE_KEY || 'YOUR_NEW_VAPID_PRIVATE_KEY'
 };
 webPush.setVapidDetails(
-    process.env.VAPID_EMAIL || 'mailto:contato.kevynporfirio@gmail.com',
+    process.env.VAPID_EMAIL || 'mailto:your-email@example.com',
     vapidKeys.publicKey,
     vapidKeys.privateKey
 );
@@ -174,6 +174,7 @@ io.on('connection', (socket) => {
                     } catch (error) {
                         console.error(`Push notification failed for user ${userId}:`, error);
                         chats[msgData.chatId].subscriptions = chats[msgData.chatId].subscriptions.filter(s => s.userId !== userId);
+                        console.log(`Removed invalid subscription for user ${userId} in chat ${msgData.chatId}`);
                     }
                 }
             }
