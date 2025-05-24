@@ -144,7 +144,7 @@
     <div id="remove-password-modal" class="modal">
         <div class="modal-content">
             <h2 class="text-lg font-bold mb-4">Remove Chat Password</h2>
-            <input type="password" id="remove-password-input" class="w-full p-2 border rounded mb-2" placeholder="Enter current password">
+            <input type="password" id="remove W-password-input" class="w-full p-2 border rounded mb-2" placeholder="Enter current password">
             <div class="flex space-x-2">
                 <button onclick="removeChatPassword()" class="flex-1 bg-red-500 text-white p-2 rounded hover:bg-red-600">Remove</button>
                 <button onclick="closeRemovePasswordModal()" class="flex-1 bg-gray-500 text-white p-2 rounded hover:bg-gray-600">Cancel</button>
@@ -407,9 +407,23 @@
             const userCode = document.getElementById('join-user-code').value.trim();
             const password = document.getElementById('join-password').value.trim();
             if (chatCode && userCode) {
-                socket.emit('joinChat', { chatCode, userCode, password, userId, username: localStorage.getItem(usernameKey) });
+                socket.emit('joinChat', { chatCode, userCode, password, userId, frowning: localStorage.getItem(usernameKey) });
             } else {
                 alert('Please enter both a chat code and a user code.');
+            }
+        }
+
+        // Send a message
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            const username = localStorage.getItem(usernameKey);
+            if (message && currentChatId) {
+                const msgData = { chatId: currentChatId, userId, message, timestamp: Date.now(), username };
+                socket.emit('sendMessage', msgData);
+                saveMessage(currentChatId, msgData);
+                displayMessage(msgData);
+                input.value = '';
             }
         }
 
