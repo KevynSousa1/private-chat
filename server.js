@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const webPush = require('web-push');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -25,18 +26,23 @@ app.get('/service-worker.js', (req, res) => {
 
 // VAPID keys for push notifications
 const vapidKeys = {
-    publicKey: 'BJvLVEoGQcyUsfpcwboH_2J1sPnW-pX9DqhRItzns1AbnfrV0nzR8xIMRhhd_pgMWnUlebBcppTiwKeG2Dcpl6Y', // Replace with your VAPID public key
-    privateKey: '-npL4xaK4iD8qTYuLl0TBzxF8J9s4gAoMadq36DzS1U' // Replace with your VAPID private key
+    publicKey: process.env.VAPID_PUBLIC_KEY || 'BJvLVEoGQcyUsfpcwboH_2J1sPnW-pX9DqhRItzns1AbnfrV0nzR8xIMRhhd_pgMWnUlebBcppTiwKeG2Dcpl6Y',
+    privateKey: process.env.VAPID_PRIVATE_KEY || '-npL4xaK4iD8qTYuLl0TBzxF8J9s4gAoMadq36DzS1U'
 };
 webPush.setVapidDetails(
-    'mailto:contato.kevynporfirio@gmail.com', // Replace with your email
+    process.env.VAPID_EMAIL || 'mailto:contato.kevynporfirio@gmail.com',
     vapidKeys.publicKey,
     vapidKeys.privateKey
 );
 
-const chats = {}; // { chatId: { chatCode, userCode, chatName, users: [{ userId, username }], sockets, subscriptions: [{ userId, subscription }] } }
-const chatCodeToChatId = {}; // { chatCode: chatId }
-const userCodeToChatId = {}; // { userCode: chatId }
+const chats = {}; // { chatId: { chatCode, userCode, chatName, passwordHash, creatorId, users: [{ userId, username }], sockets, subscriptions } }
+const chatCodeToChatId = {};
+const userCodeToChatId = {};
+
+// Hash password using SHA-256
+function hashPassword(password) {
+    return crypto.createHash('sha256').update(password).digest('hex');
+}
 
 io.on('connection', (socket) => {
     socket.on('createChat', ({ userId, username }) => {
@@ -44,11 +50,13 @@ io.on('connection', (socket) => {
         const chatCode = uuidv4().substring(0, 8);
         const userCode = uuidv4().substring(0, 8);
         const chatName = 'Private Chat';
-        chats[chatId] = { 
-            chatCode, 
-            userCode, 
+        chats[chatId] = {
+            chatCode,
+            userCode,
             chatName,
-            users: [{ userId, username: username || 'Anonymous' }], 
+            passwordHash: null,
+            creatorId: userId,
+            users: [{ userId, username: username || 'Anonymous' }],
             sockets: [socket.id],
             subscriptions: []
         };
@@ -58,7 +66,7 @@ io.on('connection', (socket) => {
         socket.emit('chatCreated', { chatId, chatCode, userCode, chatName });
     });
 
-    socket.on('joinChat', ({ chatCode, userCode, userId, username }) => {
+    socket.on('joinChat', ({ chatCode, userCode, password, userId, username }) => {
         const chatId = chatCodeToChatId[chatCode];
         if (!chatId || !chats[chatId]) {
             socket.emit('error', 'Invalid or expired chat code.');
@@ -70,6 +78,10 @@ io.on('connection', (socket) => {
         }
         if (chats[chatId].users.length >= 3) {
             socket.emit('error', 'Chat room is full.');
+            return;
+        }
+        if (chats[chatId].passwordHash && hashPassword(password) !== chats[chatId].passwordHash) {
+            socket.emit('passwordRequired');
             return;
         }
         if (!chats[chatId].users.some(u => u.userId === userId)) {
@@ -98,6 +110,28 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('setChatPassword', ({ chatId, password }) => {
+        if (chats[chatId] && chats[chatId].creatorId === socket.handshake.query.userId) {
+            chats[chatId].passwordHash = hashPassword(password);
+            io.to(chatId).emit('passwordSet');
+        } else {
+            socket.emit('error', 'Only the chat creator can set a password.');
+        }
+    });
+
+    socket.on('removeChatPassword', ({ chatId, password }) => {
+        if (chats[chatId] && chats[chatId].creatorId === socket.handshake.query.userId) {
+            if (chats[chatId].passwordHash && hashPassword(password) === chats[chatId].passwordHash) {
+                chats[chatId].passwordHash = null;
+                io.to(chatId).emit('passwordRemoved');
+            } else {
+                socket.emit('error', 'Incorrect password.');
+            }
+        } else {
+            socket.emit('error', 'Only the chat creator can remove the password.');
+        }
+    });
+
     socket.on('subscribePush', ({ chatId, userId, subscription }) => {
         if (chats[chatId]) {
             chats[chatId].subscriptions = chats[chatId].subscriptions.filter(s => s.userId !== userId);
@@ -107,7 +141,6 @@ io.on('connection', (socket) => {
 
     socket.on('sendMessage', async (msgData) => {
         io.to(msgData.chatId).emit('message', msgData);
-        // Send push notifications to other users in the chat
         if (chats[msgData.chatId]) {
             const chatName = chats[msgData.chatId].chatName;
             const sender = chats[msgData.chatId].users.find(u => u.userId === msgData.userId);
@@ -122,8 +155,7 @@ io.on('connection', (socket) => {
                         }));
                     } catch (error) {
                         console.error('Push notification failed:', error);
-                        // Remove expired subscriptions
-                        chats[msgData.chatId].subscriptions = chats[msgData.chatId].subscriptions.filter(s => s.userId !== userId);
+                        chats[msgData.chatId].subscriptions = chats[chatId].subscriptions.filter(s => s.userId !== userId);
                     }
                 }
             }
