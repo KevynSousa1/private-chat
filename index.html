@@ -201,11 +201,11 @@
                         console.log('Service Worker is active:', registration.active);
                         const subscription = await registration.pushManager.subscribe({
                             userVisibleOnly: true,
-                            applicationServerKey: 'BJvLVEoGQcyUsfpcwboH_2J1sPnW-pX9DqhRItzns1AbnfrV0nzR8xIMRhhd_pgMWnUlebBcppTiwKeG2Dcpl6Y'
+                            applicationServerKey: 'BNxMSF8g57fv25doxz5C2CzociUlIwc03IMrXsIqbU1RHS_16dpt2054smZ19aXdBNy7mC5jZcrYvBwn0D0XwHQ' // Replace with new public key
                         });
                         console.log('Push subscription created:', JSON.stringify(subscription));
                         socket.emit('subscribePush', { chatId, userId, subscription });
-                        console.log('subscribePush emitted for chat:', chatId);
+                        console.log('subscribePush emitted for chat:', chatId, 'user:', userId);
                     } else {
                         console.log('Notification permission denied');
                         alert('Notifications are disabled. Please enable them in your browser settings.');
