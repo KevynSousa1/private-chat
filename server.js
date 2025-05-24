@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const webPush = require('web-push');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,27 +14,43 @@ const io = new Server(server, {
     }
 });
 
-// Serve index.html from the same directory as server.js
+// Serve index.html and service-worker.js
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-const chats = {}; // { chatId: { chatCode, userCode, chatName, users: [{ userId, username }], sockets } }
+app.get('/service-worker.js', (req, res) => {
+    res.sendFile(path.join(__dirname, 'service-worker.js'));
+});
+
+// VAPID keys for push notifications
+const vapidKeys = {
+    publicKey: 'BJvLVEoGQcyUsfpcwboH_2J1sPnW-pX9DqhRItzns1AbnfrV0nzR8xIMRhhd_pgMWnUlebBcppTiwKeG2Dcpl6Y', // Replace with your VAPID public key
+    privateKey: '-npL4xaK4iD8qTYuLl0TBzxF8J9s4gAoMadq36DzS1U' // Replace with your VAPID private key
+};
+webPush.setVapidDetails(
+    'contato.kevynporfirio@gmail.com', // Replace with your email
+    vapidKeys.publicKey,
+    vapidKeys.privateKey
+);
+
+const chats = {}; // { chatId: { chatCode, userCode, chatName, users: [{ userId, username }], sockets, subscriptions: [{ userId, subscription }] } }
 const chatCodeToChatId = {}; // { chatCode: chatId }
 const userCodeToChatId = {}; // { userCode: chatId }
 
 io.on('connection', (socket) => {
     socket.on('createChat', ({ userId, username }) => {
         const chatId = uuidv4();
-        const chatCode = uuidv4().substring(0, 8); // Shortened UUID for chat
-        const userCode = uuidv4().substring(0, 8); // Shortened UUID for user
-        const chatName = 'Private Chat'; // Default name
+        const chatCode = uuidv4().substring(0, 8);
+        const userCode = uuidv4().substring(0, 8);
+        const chatName = 'Private Chat';
         chats[chatId] = { 
             chatCode, 
             userCode, 
             chatName,
             users: [{ userId, username: username || 'Anonymous' }], 
-            sockets: [socket.id] 
+            sockets: [socket.id],
+            subscriptions: []
         };
         chatCodeToChatId[chatCode] = chatId;
         userCodeToChatId[userCode] = chatId;
@@ -76,13 +93,41 @@ io.on('connection', (socket) => {
 
     socket.on('setChatName', ({ chatId, chatName }) => {
         if (chats[chatId] && chatName.trim()) {
-            chats[chatId].chatName = chatName.substring(0, 50); // Enforce max length
+            chats[chatId].chatName = chatName.substring(0, 50);
             io.to(chatId).emit('chatNameUpdated', { chatName: chats[chatId].chatName });
         }
     });
 
-    socket.on('sendMessage', (msgData) => {
+    socket.on('subscribePush', ({ chatId, userId, subscription }) => {
+        if (chats[chatId]) {
+            chats[chatId].subscriptions = chats[chatId].subscriptions.filter(s => s.userId !== userId);
+            chats[chatId].subscriptions.push({ userId, subscription });
+        }
+    });
+
+    socket.on('sendMessage', async (msgData) => {
         io.to(msgData.chatId).emit('message', msgData);
+        // Send push notifications to other users in the chat
+        if (chats[msgData.chatId]) {
+            const chatName = chats[msgData.chatId].chatName;
+            const sender = chats[msgData.chatId].users.find(u => u.userId === msgData.userId);
+            const notificationTitle = `${sender.username} in ${chatName}`;
+            const notificationBody = msgData.message || (msgData.fileType === 'image' ? 'Sent an image' : 'Sent a file');
+            for (const { userId, subscription } of chats[msgData.chatId].subscriptions) {
+                if (userId !== msgData.userId) {
+                    try {
+                        await webPush.sendNotification(subscription, JSON.stringify({
+                            title: notificationTitle,
+                            body: notificationBody
+                        }));
+                    } catch (error) {
+                        console.error('Push notification failed:', error);
+                        // Remove expired subscriptions
+                        chats[msgData.chatId].subscriptions = chats[msgData.chatId].subscriptions.filter(s => s.userId !== userId);
+                    }
+                }
+            }
+        }
     });
 
     socket.on('disconnect', () => {
