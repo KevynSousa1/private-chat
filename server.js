@@ -35,7 +35,7 @@ webPush.setVapidDetails(
     vapidKeys.privateKey
 );
 
-const chats = {}; // { chatId: { chatCode, userCode, chatName, passwordHash, creatorId, users: [{ userId, username }], sockets, subscriptions } }
+const chats = {};
 const chatCodeToChatId = {};
 const userCodeToChatId = {};
 
@@ -110,8 +110,8 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('setChatPassword', ({ chatId, password }) => {
-        if (chats[chatId] && chats[chatId].creatorId === socket.handshake.query.userId) {
+    socket.on('setChatPassword', ({ chatId, userId, password }) => {
+        if (chats[chatId] && chats[chatId].creatorId === userId) {
             chats[chatId].passwordHash = hashPassword(password);
             io.to(chatId).emit('passwordSet');
         } else {
@@ -119,8 +119,8 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('removeChatPassword', ({ chatId, password }) => {
-        if (chats[chatId] && chats[chatId].creatorId === socket.handshake.query.userId) {
+    socket.on('removeChatPassword', ({ chatId, userId, password }) => {
+        if (chats[chatId] && chats[chatId].creatorId === userId) {
             if (chats[chatId].passwordHash && hashPassword(password) === chats[chatId].passwordHash) {
                 chats[chatId].passwordHash = null;
                 io.to(chatId).emit('passwordRemoved');
@@ -155,7 +155,7 @@ io.on('connection', (socket) => {
                         }));
                     } catch (error) {
                         console.error('Push notification failed:', error);
-                        chats[msgData.chatId].subscriptions = chats[chatId].subscriptions.filter(s => s.userId !== userId);
+                        chats[msgData.chatId].subscriptions = chats[msgData.chatId].subscriptions.filter(s => s.userId !== userId);
                     }
                 }
             }
