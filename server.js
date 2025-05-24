@@ -34,6 +34,10 @@ webPush.setVapidDetails(
     vapidKeys.publicKey,
     vapidKeys.privateKey
 );
+console.log('VAPID configuration:', {
+    publicKey: vapidKeys.publicKey,
+    email: process.env.VAPID_EMAIL
+});
 
 const chats = {};
 const chatCodeToChatId = {};
@@ -136,6 +140,7 @@ io.on('connection', (socket) => {
         if (chats[chatId]) {
             chats[chatId].subscriptions = chats[chatId].subscriptions.filter(s => s.userId !== userId);
             chats[chatId].subscriptions.push({ userId, subscription });
+            console.log(`Push subscription added for user ${userId} in chat ${chatId}`, subscription);
         }
     });
 
@@ -146,6 +151,11 @@ io.on('connection', (socket) => {
             const sender = chats[msgData.chatId].users.find(u => u.userId === msgData.userId);
             const notificationTitle = `${sender.username} in ${chatName}`;
             const notificationBody = msgData.message || (msgData.fileType === 'image' ? 'Sent an image' : 'Sent a file');
+            console.log(`Attempting to send notifications for chat ${msgData.chatId}`, {
+                title: notificationTitle,
+                body: notificationBody,
+                subscriptions: chats[msgData.chatId].subscriptions.length
+            });
             for (const { userId, subscription } of chats[msgData.chatId].subscriptions) {
                 if (userId !== msgData.userId) {
                     try {
@@ -153,8 +163,9 @@ io.on('connection', (socket) => {
                             title: notificationTitle,
                             body: notificationBody
                         }));
+                        console.log(`Notification sent to user ${userId}`);
                     } catch (error) {
-                        console.error('Push notification failed:', error);
+                        console.error(`Push notification failed for user ${userId}:`, error);
                         chats[msgData.chatId].subscriptions = chats[msgData.chatId].subscriptions.filter(s => s.userId !== userId);
                     }
                 }
