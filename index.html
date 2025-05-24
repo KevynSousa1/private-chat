@@ -186,9 +186,10 @@
         // Request notification permission and register push
         async function enableNotifications() {
             if ('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window) {
-                const permission = await Notification.requestPermission();
-                if (permission === 'granted') {
-                    try {
+                try {
+                    const permission = await Notification.requestPermission();
+                    console.log('Notification permission:', permission);
+                    if (permission === 'granted') {
                         const registration = await navigator.serviceWorker.register('/service-worker.js');
                         console.log('Service Worker registered:', registration);
                         await navigator.serviceWorker.ready;
@@ -199,14 +200,16 @@
                         });
                         console.log('Push subscription created:', subscription);
                         socket.emit('subscribePush', { chatId: currentChatId, userId, subscription });
-                    } catch (error) {
-                        console.error('Push subscription failed:', error);
+                    } else {
+                        console.log('Notification permission denied');
                     }
-                } else {
-                    console.log('Notification permission denied');
+                } catch (error) {
+                    console.error('Enable notifications failed:', error);
+                    alert('Failed to enable notifications: ' + error.message);
                 }
             } else {
                 console.log('Push notifications not supported in this browser');
+                alert('Push notifications are not supported in this browser.');
             }
         }
 
@@ -248,6 +251,88 @@
         }
 
         // Set and save username
+        function setUsername() {
+            const username = document.getElementById('username-input').value.trim();
+            if (username) {
+                localStorage.setItem(usernameKey, username);
+                document.getElementById('username-display').textContent = username;
+                document.getElementById('username-prompt').classList.add('hidden');
+                document.getElementById('chat').classList.remove('hidden');
+                document.getElementById('username-input').value = '';
+                socket.emit('setUsername', { chatId: currentChatId, userId, username });
+            } else {
+                alert('Please enter a username.');
+            }
+        }
+
+        // Show username prompt
+        function showUsernamePrompt() {
+            document.getElementById('username-prompt').classList.remove('hidden');
+            document.getElementById('chat').classList.add('hidden');
+        }
+
+        // Show chat name prompt
+        function showChatNamePrompt() {
+            document.getElementById('chat-name-prompt').classList.remove('hidden');
+            document.getElementById('chat').classList.add('hidden');
+            document.getElementById('chat-name-input').value = document.getElementById('chat-title').textContent;
+        }
+
+        // Set chat name
+        function setChatName() {
+            const chatName = document.getElementById('chat-name-input').value.trim();
+            if (chatName) {
+                socket.emit('setChatName', { chatId: currentChatId, chatName });
+                document.getElementById('chat-name-prompt').classList.add('hidden');
+                document.getElementById('chat').classList.remove('hidden');
+                document.getElementById('chat-name-input').value = '';
+            } else {
+                alert('Please enter a chat name.');
+            }
+        }
+
+        // Chat configuration: Open set password modal
+        function openSetPasswordModal() {
+            if (!isChatCreator) {
+                alert('Only the chat creator can set a password.');
+                return;
+            }
+            document.getElementById('set-password-modal').style.display = 'flex';
+            document.getElementById('set-password-input').value = '';
+        }
+
+        // Close set password modal
+        function closeSetPasswordModal() {
+            document.getElementById('set-password-modal').style.display = 'none';
+        }
+
+        // Set chat password
+        function setChatPassword() {
+            const password = document.getElementById('set-password-input').value.trim();
+            if (password.length >= 4 && password.length <= 20) {
+                socket.emit('setChatPassword', { chatId: currentChatId, userId, password });
+                closeSetPasswordModal();
+            } else {
+                alert('Password must be 4-20 characters.');
+            }
+        }
+
+        // Open remove password modal
+        function openRemovePasswordModal() {
+            if (!isChatCreator) {
+                alert('Only the chat creator can remove the password.');
+                return;
+            }
+            document.getElementById('remove-password-modal').style.display = 'flex';
+            document.getElementById('remove-password-input').value = '';
+        }
+
+        // Close remove password modal
+        function closeRemovePasswordModal() {
+            document.getElementById('remove-password-modal').style.display = 'none';
+        }
+
+        // Remove chat password
         function setUsername() {
             const username = document.getElementById('username-input').value.trim();
             if (username) {
