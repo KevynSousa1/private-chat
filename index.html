@@ -184,7 +184,12 @@
         );
 
         // Request notification permission and register push
-        async function enableNotifications() {
+        async function enableNotifications(chatId) {
+            if (!chatId) {
+                console.error('enableNotifications: chatId is not set');
+                alert('Cannot enable notifications: Chat not initialized.');
+                return;
+            }
             if ('Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window) {
                 try {
                     const permission = await Notification.requestPermission();
@@ -198,10 +203,12 @@
                             userVisibleOnly: true,
                             applicationServerKey: 'BJvLVEoGQcyUsfpcwboH_2J1sPnW-pX9DqhRItzns1AbnfrV0nzR8xIMRhhd_pgMWnUlebBcppTiwKeG2Dcpl6Y'
                         });
-                        console.log('Push subscription created:', subscription);
-                        socket.emit('subscribePush', { chatId: currentChatId, userId, subscription });
+                        console.log('Push subscription created:', JSON.stringify(subscription));
+                        socket.emit('subscribePush', { chatId, userId, subscription });
+                        console.log('subscribePush emitted for chat:', chatId);
                     } else {
                         console.log('Notification permission denied');
+                        alert('Notifications are disabled. Please enable them in your browser settings.');
                     }
                 } catch (error) {
                     console.error('Enable notifications failed:', error);
@@ -333,6 +340,152 @@
         }
 
         // Remove chat password
+        function removeChatPassword() {
+            const password = document.getElementById('remove-password-input').value.trim();
+            if (password) {
+                socket.emit('removeChatPassword', { chatId: currentChatId, userId, password });
+                closeRemovePasswordModal();
+            } else {
+                alert('Please enter the current password.');
+            }
+        }
+
+        // Update status bar
+        function updateStatusBar() {
+            const statusBar = document.getElementById('status-bar');
+            statusBar.innerHTML = '';
+            Object.entries(usersStatus).forEach(([otherUserId, { username, status }]) => {
+                if (otherUserId !== userId) {
+                    const statusDiv = document.createElement('div');
+                    statusDiv.className = `status ${status}`;
+                    statusDiv.textContent = `${username || 'Anonymous'}: ${status.charAt(0).toUpperCase() + status.slice(1)}`;
+                    statusBar.appendChild(statusDiv);
+                }
+            });
+        }
+
+        // Load stored messages
+        function loadMessages(chatId) {
+            const messages = JSON.parse(localStorage.getItem(messagesKey) || '{}')[chatId] || [];
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = '';
+            messages.forEach(msg => displayMessage(msg));
+        }
+
+        // Save message to localStorage
+        function saveMessage(chatId, message) {
+            const messages = JSON.parse(localStorage.getItem(messagesKey) || '{}');
+            if (!messages[chatId]) messages[chatId] = [];
+            messages[chatId].push(message);
+            localStorage.setItem(messagesKey, JSON.stringify(messages));
+        }
+
+        // Display message in chat
+        function displayMessage({ userId: senderId, message, fileUrl, fileType, timestamp, username }) {
+            const messagesDiv = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${senderId === userId ? 'sent' : 'received'}`;
+            let content = `<strong>${username || 'Anonymous'}: </strong>`;
+            if (message) {
+                content += message;
+            }
+            if (fileUrl) {
+                if (fileType === 'image') {
+                    content += `<br><img src="${fileUrl}" alt="Shared image">`;
+                } else {
+                    content += `<br><a href="${fileUrl}" target="_blank">View File</a>`;
+                }
+            }
+            content += ` <small>(${new Date(timestamp).toLocaleTimeString()})</small>`;
+            msgDiv.innerHTML = content;
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Show join form
+        function showJoinForm() {
+            document.getElementById('setup').classList.remove('hidden');
+            document.getElementById('join-chat-code').value = '';
+            document.getElementById('join-user-code').value = '';
+            document.getElementById('join-password').value = '';
+            document.getElementById('join-password').classList.add('hidden');
+        }
+
+        // Join a chat with chat code, user code, and optional password
+        function joinChat() {
+            const chatCode = document.getElementById('join-chat-code').value.trim();
+            const userCode = document.getElementById('join-user-code').value.trim();
+            const password = document.getElementById('join-password').value.trim();
+            if (chatCode && userCode) {
+                socket.emit('joinChat', { chatCode, userCode, password, userId, username: localStorage.getItem(usernameKey) });
+            } else {
+                alert('Please enter both a chat code and a user code.');
+            }
+        }
+
+        // Send a message
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            const username = localStorage.getItem(usernameKey);
+            if (message && currentChatId) {
+                const msgData = { chatId: currentChatId, userId, message, timestamp: Date.now(), username };
+                socket.emit('sendMessage', msgData);
+                saveMessage(currentChatId, msgData);
+                displayMessage(msgData);
+                input.value = '';
+            }
+        }
+
+        // Handle Enter key for sending messages
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // Handle Enter key forelse {
+                console.log('Push notifications not supported in this browser');
+                alert('Push notifications are not supported in this browser.');
+            }
+        }
+
+        // Open Cloudinary upload widget
+        function openFileUpload() {
+            cloudinaryWidget.open();
+        }
+
+        // Send file message
+        function sendFileMessage(fileUrl, fileType) {
+            const username = localStorage.getItem(usernameKey);
+            if (currentChatId) {
+                const msgData = {
+                    chatId: currentChatId,
+                    userId,
+                    message: '',
+                    fileUrl,
+                    fileType,
+                    timestamp: Date.now(),
+                    username
+                };
+                socket.emit('sendMessage', msgData);
+                saveMessage(currentChatId, msgData);
+                displayMessage(msgData);
+            }
+        }
+
+        // Load stored username
+        function loadUsername() {
+            const username = localStorage.getItem(usernameKey);
+            if (username) {
+                document.getElementById('username-display').textContent = username;
+                document.getElementById('username-prompt').classList.add('hidden');
+                document.getElementById('chat').classList.remove('hidden');
+            } else {
+                document.getElementById('username-prompt').classList.remove('hidden');
+                document.getElementById('chat').classList.add('hidden');
+            }
+        }
+
+        // Set and save username
         function setUsername() {
             const username = document.getElementById('username-input').value.trim();
             if (username) {
@@ -558,7 +711,7 @@
             updateStatusBar();
             loadUsername();
             loadMessages(chatId);
-            enableNotifications();
+            enableNotifications(chatId);
         });
 
         socket.on('chatJoined', ({ chatId, users, chatName }) => {
@@ -575,7 +728,7 @@
             updateStatusBar();
             loadUsername();
             loadMessages(chatId);
-            enableNotifications();
+            enableNotifications(chatId);
         });
 
         socket.on('chatNameUpdated', ({ chatName }) => {
