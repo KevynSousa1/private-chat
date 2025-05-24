@@ -140,7 +140,14 @@ io.on('connection', (socket) => {
         if (chats[chatId]) {
             chats[chatId].subscriptions = chats[chatId].subscriptions.filter(s => s.userId !== userId);
             chats[chatId].subscriptions.push({ userId, subscription });
-            console.log(`Push subscription added for user ${userId} in chat ${chatId}`, subscription);
+            console.log(`Push subscription added for user ${userId} in chat ${chatId}`, {
+                endpoint: subscription.endpoint,
+                userId,
+                chatId
+            });
+        } else {
+            console.error(`subscribePush: Chat ${chatId} not found`);
+            socket.emit('error', 'Chat not found for subscription.');
         }
     });
 
@@ -163,7 +170,7 @@ io.on('connection', (socket) => {
                             title: notificationTitle,
                             body: notificationBody
                         }));
-                        console.log(`Notification sent to user ${userId}`);
+                        console.log(`Notification sent to user ${userId}`, { endpoint: subscription.endpoint });
                     } catch (error) {
                         console.error(`Push notification failed for user ${userId}:`, error);
                         chats[msgData.chatId].subscriptions = chats[msgData.chatId].subscriptions.filter(s => s.userId !== userId);
