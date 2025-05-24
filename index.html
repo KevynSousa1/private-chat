@@ -144,7 +144,7 @@
                     try {
                         const subscription = await registration.pushManager.subscribe({
                             userVisibleOnly: true,
-                            applicationServerKey: 'YOUR_VAPID_PUBLIC_KEY' // Replace with your VAPID public key
+                            applicationServerKey: 'BJvLVEoGQcyUsfpcwboH_2J1sPnW-pX9DqhRItzns1AbnfrV0nzR8xIMRhhd_pgMWnUlebBcppTiwKeG2Dcpl6Y' // Replace with your VAPID public key
                         });
                         socket.emit('subscribePush', { chatId: currentChatId, userId, subscription });
                     } catch (error) {
