@@ -307,7 +307,7 @@
         function setChatPassword() {
             const password = document.getElementById('set-password-input').value.trim();
             if (password.length >= 4 && password.length <= 20) {
-                socket.emit('setChatPassword', { chatId: currentChatId, password });
+                socket.emit('setChatPassword', { chatId: currentChatId, userId, password });
                 closeSetPasswordModal();
             } else {
                 alert('Password must be 4-20 characters.');
@@ -333,7 +333,7 @@
         function removeChatPassword() {
             const password = document.getElementById('remove-password-input').value.trim();
             if (password) {
-                socket.emit('removeChatPassword', { chatId: currentChatId, password });
+                socket.emit('removeChatPassword', { chatId: currentChatId, userId, password });
                 closeRemovePasswordModal();
             } else {
                 alert('Please enter the current password.');
@@ -410,20 +410,6 @@
                 socket.emit('joinChat', { chatCode, userCode, password, userId, username: localStorage.getItem(usernameKey) });
             } else {
                 alert('Please enter both a chat code and a user code.');
-            }
-        }
-
-        // Send a message
-        function sendMessage() {
-            const input = document.getElementById('message-input');
-            const message = input.value.trim();
-            const username = localStorage.getItem(usernameKey);
-            if (message && currentChatId) {
-                const msgData = { chatId: currentChatId, userId, message, timestamp: Date.now(), username };
-                socket.emit('sendMessage', msgData);
-                saveMessage(currentChatId, msgData);
-                displayMessage(msgData);
-                input.value = '';
             }
         }
 
