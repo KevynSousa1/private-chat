@@ -26,8 +26,8 @@ app.get('/service-worker.js', (req, res) => {
 
 // VAPID keys for push notifications
 const vapidKeys = {
-    publicKey: process.env.VAPID_PUBLIC_KEY || 'BJvLVEoGQcyUsfpcwboH_2J1sPnW-pX9DqhRItzns1AbnfrV0nzR8xIMRhhd_pgMWnUlebBcppTiwKeG2Dcpl6Y',
-    privateKey: process.env.VAPID_PRIVATE_KEY || '-npL4xaK4iD8qTYuLl0TBzxF8J9s4gAoMadq36DzS1U'
+    publicKey: process.env.VAPID_PUBLIC_KEY || 'BNxMSF8g57fv25doxz5C2CzociUlIwc03IMrXsIqbU1RHS_16dpt2054smZ19aXdBNy7mC5jZcrYvBwn0D0XwHQ',
+    privateKey: process.env.VAPID_PRIVATE_KEY || 'zfbd7VmvKDphOcXo2Nsdcg9Cj2LsQ26w0p1dhxK1es0'
 };
 webPush.setVapidDetails(
     process.env.VAPID_EMAIL || 'mailto:contato.kevynporfirio@gmail.com',
