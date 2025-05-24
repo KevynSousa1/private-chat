@@ -29,7 +29,7 @@ const vapidKeys = {
     privateKey: '-npL4xaK4iD8qTYuLl0TBzxF8J9s4gAoMadq36DzS1U' // Replace with your VAPID private key
 };
 webPush.setVapidDetails(
-    'contato.kevynporfirio@gmail.com', // Replace with your email
+    'mailto:contato.kevynporfirio@gmail.com', // Replace with your email
     vapidKeys.publicKey,
     vapidKeys.privateKey
 );
